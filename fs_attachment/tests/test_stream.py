@@ -1,12 +1,13 @@
 # Copyright 2023 ACSONE SA/NV (http://acsone.eu).
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
-import base64
 import io
 import os
 import shutil
 import tempfile
 
 from PIL import Image
+
+from odoo.tools import BinaryBytes
 
 from odoo.addons.base.tests.common import HttpCaseWithUserDemo
 
@@ -109,6 +110,25 @@ class TestStream(HttpCaseWithUserDemo):
             },
             assert_content=self.content,
         )
+
+    def test_range_conditional_and_private_cache(self):
+        self.authenticate("admin", "admin")
+        url = f"/web/content/{self.attachment_binary.id}"
+        full = self.url_open(url)
+        self.assertEqual(full.status_code, 200)
+        self.assertIn("private", full.headers["Cache-Control"])
+        partial = self.url_open(url, headers={"Range": "bytes=2-5"})
+        self.assertEqual(partial.status_code, 206)
+        self.assertEqual(partial.content, self.content[2:6])
+        self.assertEqual(
+            partial.headers["Content-Range"], f"bytes 2-5/{len(self.content)}"
+        )
+        self.assertEqual(
+            self.url_open(url, headers={"Range": "bytes=99999-"}).status_code, 416
+        )
+        cached = self.url_open(url, headers={"If-None-Match": full.headers["ETag"]})
+        self.assertEqual(cached.status_code, 304)
+        self.assertEqual(cached.content, b"")
         url = (
             f"/web/content/{self.attachment_binary.id}/"
             "?filename=test2.txt&mimetype=text/csv"
@@ -170,7 +190,7 @@ class TestStream(HttpCaseWithUserDemo):
         demo_partner = self.partner_demo
         demo_partner.with_context(
             storage_location=self.temp_backend.code,
-        ).write({"image_128": base64.encodebytes(self._create_image(128, 128))})
+        ).write({"image_128": BinaryBytes(self._create_image(128, 128))})
         url = f"/web/image/{demo_partner._name}/{demo_partner.id}/image_128"
         res = self.assertDownload(
             url,

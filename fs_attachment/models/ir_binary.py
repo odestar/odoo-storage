@@ -23,7 +23,8 @@ class IrBinary(models.AbstractModel):
             return record
         field_def = record._fields.get(field_name)
         if field_def:
-            record._check_field_access(field_def, "read")
+            record.check_access("read")
+            record.check_field_access(field_def, "read")
             if field_def.attachment and field_def.store:
                 fs_attachment = (
                     self.env["ir.attachment"]
@@ -73,7 +74,18 @@ class IrBinary(models.AbstractModel):
             if filename:
                 stream.download_name = filename
             elif record and filename_field in record:
-                stream.download_name = record[filename_field] or stream.download_name
+                field = record._fields[filename_field]
+                if record.sudo(False).has_field_access(field, "read"):
+                    stream.download_name = (
+                        record[filename_field] or stream.download_name
+                    )
+            stream.download_name = stream.download_name.replace("\n", "_").replace(
+                "\r", "_"
+            )
+            extension = get_extension(stream.download_name)
+            stream.download_name = (
+                stream.download_name.removesuffix(extension)[:100] + extension
+            )
 
         if (
             not get_extension(stream.download_name)
@@ -130,6 +142,10 @@ class IrBinary(models.AbstractModel):
             crop=False,
             quality=quality,
         )
+        if initial_width or initial_height or initial_crop:
+            stream.etag = (
+                f"{stream.etag}-{initial_width}x{initial_height}-crop={initial_crop}"
+            )
         modified = werkzeug.http.is_resource_modified(
             request.httprequest.environ,
             etag=stream.etag,

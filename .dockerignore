@@ -1,0 +1,9 @@
+*
+!docker/
+!docker/Dockerfile
+!docker/requirements.txt
+!docker/requirements.lock
+!fs_storage/**
+!fs_attachment/**
+**/__pycache__
+**/*.pyc

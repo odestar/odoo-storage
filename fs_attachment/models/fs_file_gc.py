@@ -106,8 +106,8 @@ class FsFileGC(models.Model):
         # otherwise it'd start blocking other transactions.
         # (will be retried later anyway)
         cr.execute("SET LOCAL lock_timeout TO '10s'")
-        cr.execute("LOCK fs_file_gc IN SHARE MODE")
         cr.execute("LOCK ir_attachment IN SHARE MODE")
+        cr.execute("LOCK fs_file_gc IN SHARE MODE")
 
         self._gc_files_unsafe()
 
@@ -142,6 +142,7 @@ class FsFileGC(models.Model):
             """,
             (tuple(codes),),
         )
+        failed = []
         for code, store_fnames in self.env.cr.fetchall():
             self.env["fs.storage"].get_by_code(code)
             fs = self.env["fs.storage"].get_fs_by_code(code)
@@ -149,7 +150,10 @@ class FsFileGC(models.Model):
                 try:
                     file_path = store_fname.partition("://")[2]
                     fs.rm(file_path)
+                except FileNotFoundError:
+                    pass
                 except Exception:
+                    failed.append(store_fname)
                     _logger.debug("Failed to remove file %s", store_fname)
 
         # delete the records from the table fs_file_gc
@@ -159,6 +163,7 @@ class FsFileGC(models.Model):
                 fs_file_gc
             WHERE
                 fs_storage_code IN %s
+                AND NOT (store_fname = ANY(%s))
             """,
-            (tuple(codes),),
+            (tuple(codes), failed),
         )

@@ -3,3 +3,5 @@ from . import test_fs_attachment_file_like_adapter
 from . import test_fs_attachment_internal_url
 from . import test_fs_storage
 from . import test_stream
+
+from . import test_odoo20_binary

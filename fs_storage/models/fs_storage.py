@@ -88,6 +88,8 @@ def prevent_call_from_safe_eval(reason):
 
 
 class FSStorage(models.Model):
+    # Odoo 20 invalidates ormcache entries through this model hook on mutation.
+    _clear_cache_name = "default"
     _name = "fs.storage"
     _description = "FS Storage"
 

@@ -6,6 +6,8 @@ from .common import MyException, TestFSAttachmentCommon
 
 
 class TestFSAttachmentFileLikeAdapterMixin:
+    allow_inherited_tests_method = True
+
     @classmethod
     def _create_attachment(cls):
         raise NotImplementedError
@@ -33,19 +35,33 @@ class TestFSAttachmentFileLikeAdapterMixin:
     def test_write(self):
         with self.open(mode="wb") as f:
             f.write(self.new_content)
-        self.assertEqual(self.new_content, self.attachment.raw)
+        self.assertEqual(self.new_content, self.attachment.raw.content)
+
+    def test_explicit_close_is_idempotent(self):
+        stream = self.open(mode="wb", new_version=True)
+        stream.write(self.new_content)
+        stream.close()
+        stream.close()
+        self.assertEqual(self.attachment.raw.content, self.new_content)
+
+    def test_text_write(self):
+        with self.open(mode="w", new_version=True, encoding="utf-8") as stream:
+            stream.write("text with unicode é")
+        self.assertEqual(self.attachment.raw.content, "text with unicode é".encode())
 
     def test_write_append(self):
-        self.assertEqual(self.initial_content, self.attachment.raw)
+        self.assertEqual(self.initial_content, self.attachment.raw.content)
         with self.open(mode="ab") as f:
             f.write(self.new_content)
-        self.assertEqual(self.initial_content + self.new_content, self.attachment.raw)
+        self.assertEqual(
+            self.initial_content + self.new_content, self.attachment.raw.content
+        )
 
     def test_write_new_version(self):
         initial_fname = self.attachment.store_fname
         with self.open(mode="wb", new_version=True) as f:
             f.write(self.new_content)
-        self.assertEqual(self.new_content, self.attachment.raw)
+        self.assertEqual(self.new_content, self.attachment.raw.content)
         if initial_fname:
             self.assertNotEqual(self.attachment.store_fname, initial_fname)
 
@@ -53,7 +69,9 @@ class TestFSAttachmentFileLikeAdapterMixin:
         initial_fname = self.attachment.store_fname
         with self.open(mode="ab", new_version=True) as f:
             f.write(self.new_content)
-        self.assertEqual(self.initial_content + self.new_content, self.attachment.raw)
+        self.assertEqual(
+            self.initial_content + self.new_content, self.attachment.raw.content
+        )
         if initial_fname:
             self.assertNotEqual(self.attachment.store_fname, initial_fname)
 
@@ -63,14 +81,14 @@ class TestFSAttachmentFileLikeAdapterMixin:
             with self.env.cr.savepoint():
                 with self.open(mode="wb", new_version=True) as f:
                     f.write(self.new_content)
-                self.assertEqual(self.new_content, self.attachment.raw)
+                self.assertEqual(self.new_content, self.attachment.raw.content)
                 if initial_fname:
                     self.assertNotEqual(self.attachment.store_fname, initial_fname)
                 raise MyException("Test")
         except MyException:
             ...
 
-        self.assertEqual(self.initial_content, self.attachment.raw)
+        self.assertEqual(self.initial_content, self.attachment.raw.content)
         if initial_fname:
             self.assertEqual(self.attachment.store_fname, initial_fname)
 
@@ -109,7 +127,7 @@ class TestAttachmentInDBFileLikeAdapter(
 
     def setUp(self):
         super().setUp()
-        self.env["ir.config_parameter"].sudo().set_param("ir_attachment.location", "db")
+        self.env["ir.config_parameter"].sudo().set_str("ir_attachment.location", "db")
         self.prepare()
 
     def tearDown(self) -> None:
@@ -133,14 +151,13 @@ class TestAttachmentInFileFileLikeAdapter(
 
     def setUp(self):
         super().setUp()
-        self.env["ir.config_parameter"].sudo().set_param(
-            "ir_attachment.location", "file"
-        )
+        self.env["ir.config_parameter"].sudo().set_str("ir_attachment.location", "file")
         self.prepare()
 
     def tearDown(self) -> None:
         self.attachment.unlink()
-        self.attachment._gc_file_store_unsafe()
+        # Odoo 20's test framework collects local files after the class;
+        # its GC commits, so it cannot run inside a test transaction.
         super().tearDown()
 
     @classmethod
