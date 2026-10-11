@@ -1,5 +1,6 @@
 # Copyright 2026 Odestar
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+import base64
 import hashlib
 import io
 from unittest import mock
@@ -13,6 +14,30 @@ from .common import MyException, TestFSAttachmentCommon
 
 
 class TestOdoo20Binary(TestFSAttachmentCommon):
+    def test_filename_onchange_preserves_browser_upload(self):
+        payload = {
+            "filename": "browser.bin",
+            "content": base64.b64encode(b"browser upload").decode(),
+        }
+        values = {"name": "browser.bin", "type": "binary", "raw": payload}
+        result = self.ir_attachment_model.onchange(
+            values, ["name"], {"name": {}, "raw": {}}
+        )
+        values.update(result.get("value", {}))
+        self.assertTrue(values["raw"])
+        attachment = self.ir_attachment_model.create(values)
+        self.assertTrue(attachment.fs_storage_id)
+        self.assertEqual(attachment.raw.content, b"browser upload")
+
+    def test_persisted_rename_refreshes_binary_filename(self):
+        attachment = self.ir_attachment_model.create(
+            {"name": "before.txt", "raw": b"same bytes"}
+        )
+        self.assertEqual(attachment.raw.filename, "before.txt")
+        attachment.name = "after.txt"
+        self.assertEqual(attachment.raw.filename, "after.txt")
+        self.assertEqual(attachment.raw.content, b"same bytes")
+
     def test_adapter_replaced_object_is_collected_after_initial_candidate_clear(self):
         self.temp_backend.use_as_default_for_attachments = True
         attachment = self.ir_attachment_model.create({"name": "gc.bin", "raw": b"old"})

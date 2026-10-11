@@ -86,33 +86,19 @@ class FsFileGC(models.Model):
     @api.autovacuum
     def _gc_files(self) -> None:
         """Garbage collect files"""
-        # This method is mainly a copy of the method _gc_file_store_unsafe()
-        # from the module fs_attachment. The only difference is that the list
-        # of files to delete is retrieved from the table fs_file_gc instead
-        # of the odoo filestore.
-
-        # Continue in a new transaction. The LOCK statement below must be the
-        # first one in the current transaction, otherwise the database snapshot
-        # used by it may not contain the most recent changes made to the table
-        # ir_attachment! Indeed, if concurrent transactions create attachments,
-        # the LOCK statement will wait until those concurrent transactions end.
-        # But this transaction will not see the new attachements if it has done
-        # other requests before the LOCK (like the method _storage() above).
-        cr = self.env.cr
-        cr.commit()  # pylint: disable=invalid-commit
-
-        # prevent all concurrent updates on ir_attachment and fs_file_gc
-        # while collecting, but only attempt to grab the lock for a little bit,
-        # otherwise it'd start blocking other transactions.
-        # (will be retried later anyway)
-        cr.execute("SET LOCAL lock_timeout TO '10s'")
-        cr.execute("LOCK ir_attachment IN SHARE MODE")
-        cr.execute("LOCK fs_file_gc IN SHARE MODE")
-
-        self._gc_files_unsafe()
-
-        # commit to release the lock
-        cr.commit()  # pylint: disable=invalid-commit
+        # Odoo 20 resets its transaction after commit by querying registry
+        # signaling. That query opens a REPEATABLE READ snapshot, so reusing
+        # the caller cursor can miss an attachment committed while LOCK waits.
+        self.env.cr.commit()  # pylint: disable=invalid-commit
+        with self.env.registry.cursor() as cr:
+            # Lock before constructing an Environment: its initialization also
+            # queries signaling. The first snapshot must follow the writer.
+            cr.execute("SET LOCAL lock_timeout TO '10s'")
+            cr.execute("LOCK ir_attachment IN SHARE MODE")
+            # Serialize collectors so their candidate DELETEs cannot deadlock.
+            cr.execute("LOCK fs_file_gc IN SHARE ROW EXCLUSIVE MODE")
+            env = api.Environment(cr, self.env.uid, self.env.context, su=self.env.su)
+            env["fs.file.gc"]._gc_files_unsafe()
 
     def _gc_files_unsafe(self) -> None:
         # get the list of fs.storage codes that must be autovacuumed

@@ -58,6 +58,11 @@ def clean_fs(files):
 class IrAttachment(models.Model):
     _inherit = "ir.attachment"
 
+    # Odoo 20's name dependency clears a new form's uploaded binary during
+    # filename onchange. Field-level depends overrides merged MRO decorators;
+    # persisted renames invalidate raw in write() to refresh its filename.
+    raw = fields.Binary(depends=["store_fname", "db_datas"])
+
     fs_filename = fields.Char(
         "File Name into the filesystem storage",
         help="The name of the file in the filesystem storage."
@@ -337,6 +342,7 @@ class IrAttachment(models.Model):
 
         if "name" in vals:
             self._enforce_meaningful_storage_filename()
+            self.invalidate_recordset(["raw"])
 
         return True
 
