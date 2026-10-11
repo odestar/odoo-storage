@@ -14,6 +14,44 @@ from .common import MyException, TestFSAttachmentCommon
 
 
 class TestOdoo20Binary(TestFSAttachmentCommon):
+    def test_database_asset_stream_does_not_redirect_to_itself(self):
+        self.temp_backend.force_db_for_default_attachment_rules = (
+            '{"text/css": 0, "application/javascript": 0}'
+        )
+        for mimetype, content, public in (
+            ("text/css", b"body { color: red; }", True),
+            ("application/javascript", b"console.log('asset');", True),
+            ("text/css", b"", True),
+            ("text/css", b"private asset", False),
+        ):
+            with self.subTest(mimetype=mimetype):
+                attachment = self.ir_attachment_model.create(
+                    {
+                        "name": "asset",
+                        "type": "binary",
+                        "url": "/web/assets/test/asset",
+                        "mimetype": mimetype,
+                        "raw": content,
+                        "public": public,
+                    }
+                )
+                self.assertFalse(attachment.store_fname)
+                stream = self.env["ir.binary"]._get_stream_from(attachment)
+                self.assertEqual(stream.type, "data")
+                self.assertEqual(stream.read(), content)
+                self.assertEqual(stream.etag, attachment.checksum)
+                self.assertEqual(stream.public, public)
+
+    def test_url_attachment_remains_a_redirect(self):
+        attachment = self.ir_attachment_model.create(
+            {"name": "link", "type": "url", "url": "https://example.com/file"}
+        )
+        with mock.patch("odoo.http.stream.request", new=mock.Mock()) as request:
+            request.httprequest.environ = {"HTTP_HOST": "localhost"}
+            stream = attachment._to_http_stream()
+        self.assertEqual(stream.type, "url")
+        self.assertEqual(stream.url, attachment.url)
+
     def test_filename_onchange_preserves_browser_upload(self):
         payload = {
             "filename": "browser.bin",

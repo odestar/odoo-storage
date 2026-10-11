@@ -28,7 +28,7 @@ the deployment platform; do not deploy a moving branch reference.
 
 ## Validation
 
-On 2026-10-11, the remote Odoo `20.0+e-20261003` fixture passed 112 actual test
+On 2026-10-11, the remote Odoo `20.0+e-20261003` fixture passed 114 actual test
 methods selected by `/fs_attachment,/fs_storage,-/web`, including inherited
 adapter cases. Both modules were installed with `web_enterprise`. Ruff formatting
 and lint checks passed. The same fixture used a separate PostgreSQL 17 server
@@ -36,6 +36,11 @@ with certificate verification and real R2 object storage. Upload/read/hash,
 empty content, 1 MB and 6 MB payloads, update/rename rollback, private read denial,
 and garbage-collection outage/retry checks passed. Browser upload, authenticated
 and ranged downloads, and anonymous-access denial also passed.
+
+Database-backed CSS/JavaScript assets retain their binary stream even when an
+asset URL is present. Odoo 20 otherwise redirects these assets to themselves.
+Regression cases cover normal, empty and private binary assets, while ordinary
+URL attachments keep redirecting.
 
 Odoo 20 filename onchange could discard a browser upload; the raw field's
 explicit dependency list excludes filename and persisted renames invalidate its

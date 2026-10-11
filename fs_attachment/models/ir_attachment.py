@@ -24,6 +24,7 @@ import odoo
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.fields import Domain
+from odoo.http.stream import Stream
 from odoo.tools import BinaryBytes, BinaryValue
 
 from ..binary import FSBinaryValue
@@ -62,6 +63,24 @@ class IrAttachment(models.Model):
     # filename onchange. Field-level depends overrides merged MRO decorators;
     # persisted renames invalidate raw in write() to refresh its filename.
     raw = fields.Binary(depends=["store_fname", "db_datas"])
+
+    def _to_http_stream(self):
+        self.ensure_one()
+        # OCA keeps CSS/JS in the database. Odoo 20 otherwise interprets their
+        # asset URL as a redirect before reading db_datas, creating a loop.
+        if self.type == "binary" and not self.store_fname and self.url:
+            data = self.raw.content
+            return Stream(
+                type="data",
+                data=data,
+                mimetype=self.mimetype,
+                download_name=self.name,
+                etag=self.checksum,
+                public=self.public,
+                last_modified=self.write_date,
+                size=len(data),
+            )
+        return super()._to_http_stream()
 
     fs_filename = fields.Char(
         "File Name into the filesystem storage",
